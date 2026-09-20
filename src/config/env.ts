@@ -13,9 +13,10 @@ const envSchema = z.object({
   // Redis
   REDIS_URL: z.string().url('REDIS_URL must be a valid URL'),
 
-  // JWT — enforce minimum secret strength
+  // Security — enforce minimum secret strength
   JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
   JWT_EXPIRES_IN: z.string().default('7d'),
+  QR_SIGNING_SECRET: z.string().min(16, 'QR_SIGNING_SECRET must be at least 16 characters').optional().default(process.env.JWT_SECRET || 'default_qr_secret_key_32_characters_long'),
 
   // Email
   EMAIL_PROVIDER: z.enum(['resend', 'smtp']).default('resend'),

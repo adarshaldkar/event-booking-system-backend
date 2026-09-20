@@ -31,6 +31,7 @@ const EVENT_ID = __ENV.EVENT_ID || 'event_flash_sale_bench';
 export function setup() {
   console.log(`Setting up Flash Sale Benchmark against ${BASE_URL}...`);
   console.log(`Target Event ID: ${EVENT_ID}`);
+  console.log(`Tip: Pass -e BASE_URL=... -e EVENT_ID=... -e BENCHMARK_TOKEN=... to customize`);
   return { baseUrl: BASE_URL, eventId: EVENT_ID };
 }
 
@@ -38,22 +39,21 @@ export default function (data) {
   const vuId = __VU;
   const iterId = __ITER;
   
-  // Deterministic customer token simulation or authentication header
-  // Note: For live k6 runs against JWT auth, pre-generated tokens or dynamic login can be used
   const payload = JSON.stringify({
     eventId: data.eventId,
     quantity: 1,
   });
 
-  const params = {
-    headers: {
-      'Content-Type': 'application/json',
-      'Idempotency-Key': `k6-flash-${vuId}-${iterId}-${Date.now()}`,
-      'Authorization': `Bearer ${__ENV.BENCHMARK_TOKEN || ''}`,
-    },
+  const headers = {
+    'Content-Type': 'application/json',
+    'Idempotency-Key': `k6-flash-${vuId}-${iterId}-${Date.now()}`,
   };
 
-  const res = http.post(`${data.baseUrl}/api/bookings`, payload, params);
+  if (__ENV.BENCHMARK_TOKEN) {
+    headers['Authorization'] = `Bearer ${__ENV.BENCHMARK_TOKEN}`;
+  }
+
+  const res = http.post(`${data.baseUrl}/api/bookings`, payload, { headers });
   bookingLatency.add(res.timings.duration);
 
   if (res.status === 201) {

@@ -17,7 +17,7 @@ export class QrService {
    */
   public generateSignature(data: { ref: string; eventId: string; tickets: number; holder: string }): string {
     const raw = `${data.ref}:${data.eventId}:${data.tickets}:${data.holder}`;
-    return crypto.createHmac('sha256', env.JWT_SECRET).update(raw).digest('hex');
+    return crypto.createHmac('sha256', env.QR_SIGNING_SECRET).update(raw).digest('hex');
   }
 
   /**

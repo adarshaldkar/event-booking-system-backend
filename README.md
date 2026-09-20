@@ -12,7 +12,7 @@
 
 An enterprise-grade, high-concurrency event ticketing and booking backend built with **Node.js, Express, TypeScript, PostgreSQL, Prisma, Redis, BullMQ, and Resend**.
 
-Engineered to handle extreme flash-sale traffic bursts with **mathematically guaranteed zero-overselling**, sub-millisecond idempotency deduplication, cryptographic HMAC-signed QR code e-tickets, asynchronous fault-tolerant email notification queues, and Redis read-through caching.
+Engineered to handle flash-sale traffic bursts with atomic PostgreSQL conditional decrements to prevent overselling, database-backed customer-scoped idempotency deduplication, cryptographic HMAC-signed QR code e-tickets, asynchronous fault-tolerant email notification queues with transactional outbox reconciliation, and Redis read-through caching.
 
 ---
 
@@ -98,11 +98,12 @@ If multiple concurrent requests arrive with only 1 ticket remaining:
 - The first transaction successfully updates the row and receives the updated record.
 - Subsequent concurrent transactions find 0 matching rows (`availableTickets >= quantity` evaluates to `FALSE`) and immediately receive a `409 Conflict (SOLD_OUT / INSUFFICIENT_TICKETS)` without dirty reads or deadlocks.
 
-### 2. Sub-Millisecond Idempotency-Key Resolution
+### 2. Database-Backed Idempotency-Key Deduplication
 To prevent duplicate charges or double-booking during network retries or client double-clicks:
 1. The client supplies an `Idempotency-Key: <unique-uuid>` header.
 2. If a booking with this key already exists:
-   - The server immediately returns `200 OK` with the existing booking record (`isReplayed: true`).
+   - The server verifies customer ownership and payload consistency.
+   - The server returns `200 OK` with the existing booking record (`isReplayed: true`).
    - **Zero inventory decrement occurs.**
 3. If two concurrent requests arrive with the identical `Idempotency-Key`:
    - PostgreSQL unique constraints (`@@unique([idempotencyKey])`) enforce that only one transaction creates the record while the other rolls back cleanly.
@@ -221,9 +222,9 @@ erDiagram
 |---|---|---|---|
 | **Inventory Concurrency** | **PostgreSQL Atomic Conditional Updates** | Redis `DECRBY` / Distributed Locks | Zero drift between cache and persistent storage; eliminates multi-phase commit overhead; ACID compliant with row-level locks. |
 | **Idempotency** | **Database Unique Constraints on `idempotencyKey`** | In-memory Redis TTL keys | Ensures permanent historical replay guarantees; prevents double-billing across transaction rollbacks. |
-| **Email Processing** | **Decoupled BullMQ Worker Process** | In-band synchronous SMTP | Prevents third-party email latency (300–800ms) from blocking HTTP responses; provides automated exponential backoff retries. |
+| **Email Processing** | **Decoupled BullMQ Worker Process** | In-band synchronous SMTP | Prevents third-party email network latency from blocking HTTP responses; provides automated exponential backoff retries with outbox tracking. |
 | **E-Ticket Authenticity** | **HMAC-SHA256 Cryptographic QR Signature** | Plaintext booking IDs | Prevents ticket forging/tampering; enables offline verification by venue scanners. |
-| **Caching Layer** | **Redis Read-Through with Non-blocking `SCAN`** | Full database queries on every read | Reduces database read pressure by >95%; uses non-blocking `SCAN` iteration to avoid Redis event-loop freezing. |
+| **Caching Layer** | **Redis Read-Through with Non-blocking `SCAN`** | Full database queries on every read | Substantially reduces database read pressure on hot query paths; uses non-blocking `SCAN` iteration to avoid Redis event-loop freezing. |
 | **Password Security** | **bcrypt (salt rounds = 10)** | SHA-256 / MD5 | Adaptive work factor prevents GPU-accelerated rainbow table cracking. |
 | **OTP Storage** | **SHA-256 Hashed OTP + 5-Attempt Limit** | Plaintext in database | Prevents database leak exploits; brute-force protection locks OTP after 5 consecutive failed attempts. |
 
