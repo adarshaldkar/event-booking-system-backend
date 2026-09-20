@@ -15,11 +15,13 @@ export interface AuthOtpJobData {
   email: string;
   fullName: string;
   otp: string;
+  notificationLogId?: string;
 }
 
 export interface BookingConfirmationJobData {
   type: NotificationJobType.BOOKING_CONFIRMATION;
   bookingId: string;
+  notificationLogId?: string;
 }
 
 export interface EventUpdateBroadcastJobData {
@@ -31,6 +33,7 @@ export interface EventUpdateBroadcastJobData {
   eventDate: string;
   location: string;
   changedFields: string[];
+  notificationLogId?: string;
 }
 
 export type NotificationJobPayload =
@@ -63,7 +66,12 @@ export const notificationQueue = new Queue<NotificationJobPayload>(NOTIFICATION_
 /**
  * Enqueue an OTP email job (non-blocking)
  */
-export async function enqueueOtpEmail(data: { email: string; fullName: string; otp: string }) {
+export async function enqueueOtpEmail(data: {
+  email: string;
+  fullName: string;
+  otp: string;
+  notificationLogId?: string;
+}) {
   try {
     const job = await notificationQueue.add(
       NotificationJobType.AUTH_OTP,
@@ -72,6 +80,7 @@ export async function enqueueOtpEmail(data: { email: string; fullName: string; o
         email: data.email,
         fullName: data.fullName,
         otp: data.otp,
+        notificationLogId: data.notificationLogId,
       },
       DEFAULT_JOB_OPTIONS
     );
@@ -85,20 +94,23 @@ export async function enqueueOtpEmail(data: { email: string; fullName: string; o
 /**
  * Enqueue a booking confirmation job with QR e-ticket generation (non-blocking)
  */
-export async function enqueueBookingConfirmation(bookingId: string) {
+export async function enqueueBookingConfirmation(bookingId: string, notificationLogId?: string) {
   try {
     const job = await notificationQueue.add(
       NotificationJobType.BOOKING_CONFIRMATION,
       {
         type: NotificationJobType.BOOKING_CONFIRMATION,
         bookingId,
+        notificationLogId,
       },
       DEFAULT_JOB_OPTIONS
     );
     logger.info(`📥 Enqueued BOOKING_CONFIRMATION job #${job.id} for booking ${bookingId}`);
     return job;
   } catch (err: any) {
-    logger.error(`Failed to enqueue BOOKING_CONFIRMATION job for booking ${bookingId}`, { error: err.message });
+    logger.error(`Failed to enqueue BOOKING_CONFIRMATION job for booking ${bookingId}`, {
+      error: err.message,
+    });
   }
 }
 
@@ -114,6 +126,7 @@ export async function enqueueEventUpdateBroadcastBatch(
     eventDate: string;
     location: string;
     changedFields: string[];
+    notificationLogId?: string;
   }>
 ) {
   try {

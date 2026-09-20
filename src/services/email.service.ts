@@ -17,6 +17,9 @@ export interface SendBookingEmailOptions {
   qrDataUrl: string;
   bookingId: string;
   eventId: string;
+  notificationLogId?: string;
+  currentAttempt?: number;
+  maxAttempts?: number;
 }
 
 export interface SendEventUpdateEmailOptions {
@@ -27,6 +30,9 @@ export interface SendEventUpdateEmailOptions {
   location: string;
   changedFields: string[];
   eventId: string;
+  notificationLogId?: string;
+  currentAttempt?: number;
+  maxAttempts?: number;
 }
 
 export class EmailService {
@@ -52,8 +58,15 @@ export class EmailService {
   /**
    * Send 6-digit OTP verification email
    */
-  public async sendOtpEmail(options: { to: string; fullName: string; otp: string }) {
-    const { to, fullName, otp } = options;
+  public async sendOtpEmail(options: {
+    to: string;
+    fullName: string;
+    otp: string;
+    notificationLogId?: string;
+    currentAttempt?: number;
+    maxAttempts?: number;
+  }) {
+    const { to, fullName, otp, notificationLogId, currentAttempt, maxAttempts } = options;
     const subject = 'Your Verification Code - Event Booking System';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
@@ -74,6 +87,9 @@ export class EmailService {
       subject,
       html,
       type: NotificationType.AUTH_OTP,
+      notificationLogId,
+      currentAttempt,
+      maxAttempts,
     });
   }
 
@@ -93,6 +109,9 @@ export class EmailService {
       qrDataUrl,
       bookingId,
       eventId,
+      notificationLogId,
+      currentAttempt,
+      maxAttempts,
     } = options;
 
     const formattedDate = new Date(eventDate).toLocaleString('en-US', {
@@ -162,6 +181,9 @@ export class EmailService {
       type: NotificationType.BOOKING_CONFIRMATION,
       bookingId,
       eventId,
+      notificationLogId,
+      currentAttempt,
+      maxAttempts,
     });
   }
 
@@ -169,7 +191,18 @@ export class EmailService {
    * Send event update broadcast email to confirmed attendees
    */
   public async sendEventUpdateBroadcastEmail(options: SendEventUpdateEmailOptions) {
-    const { to, fullName, eventTitle, eventDate, location, changedFields, eventId } = options;
+    const {
+      to,
+      fullName,
+      eventTitle,
+      eventDate,
+      location,
+      changedFields,
+      eventId,
+      notificationLogId,
+      currentAttempt,
+      maxAttempts,
+    } = options;
 
     const formattedDate = new Date(eventDate).toLocaleString('en-US', {
       weekday: 'short',
@@ -206,11 +239,15 @@ export class EmailService {
       html,
       type: NotificationType.EVENT_UPDATE_BROADCAST,
       eventId,
+      notificationLogId,
+      currentAttempt,
+      maxAttempts,
     });
   }
 
   /**
-   * Internal delivery helper with NotificationLog status tracking and retry support
+   * Internal delivery helper: updates a SINGLE persistent NotificationLog across attempts 1 -> 2 -> 3
+   * Never masks delivery failures with fake message IDs.
    */
   public async deliverWithLogging(params: {
     to: string;
@@ -219,25 +256,41 @@ export class EmailService {
     type: NotificationType;
     eventId?: string;
     bookingId?: string;
+    notificationLogId?: string;
     currentAttempt?: number;
     maxAttempts?: number;
   }) {
-    const { to, subject, html, type, eventId, bookingId, currentAttempt = 1, maxAttempts = 3 } = params;
+    const {
+      to,
+      subject,
+      html,
+      type,
+      eventId,
+      bookingId,
+      notificationLogId,
+      currentAttempt = 1,
+      maxAttempts = 3,
+    } = params;
 
-    let logRecord;
-    try {
-      logRecord = await prisma.notificationLog.create({
-        data: {
-          recipientEmail: to,
-          notificationType: type,
-          deliveryStatus: NotificationStatus.PENDING,
-          eventId,
-          bookingId,
-          attempts: currentAttempt,
-        },
-      });
-    } catch (err: any) {
-      logger.warn('Failed to create notification log record', { error: err.message });
+    let logId = notificationLogId;
+
+    // If no existing outbox log was passed, create one (PENDING)
+    if (!logId) {
+      try {
+        const logRecord = await prisma.notificationLog.create({
+          data: {
+            recipientEmail: to,
+            notificationType: type,
+            deliveryStatus: NotificationStatus.PENDING,
+            eventId,
+            bookingId,
+            attempts: currentAttempt,
+          },
+        });
+        logId = logRecord.id;
+      } catch (err: any) {
+        logger.warn('Failed to create notification log record', { error: err.message });
+      }
     }
 
     try {
@@ -264,31 +317,34 @@ export class EmailService {
         });
         messageId = info.messageId;
       } else {
-        messageId = `simulated-msg-${Date.now()}`;
+        throw new Error('No email delivery provider configured (Resend API key or SMTP settings required).');
       }
 
-      // Mark SENT on success
-      if (logRecord) {
+      // Mark single record as SENT on success
+      if (logId) {
         await prisma.notificationLog.update({
-          where: { id: logRecord.id },
+          where: { id: logId },
           data: {
             deliveryStatus: NotificationStatus.SENT,
             providerMessageId: messageId,
+            attempts: currentAttempt,
             sentAt: new Date(),
           },
         });
       }
 
       logger.info(`📧 Email delivered to ${to} (Type: ${type}, MsgID: ${messageId})`);
-      return { success: true, messageId };
+      return { success: true, messageId, notificationLogId: logId };
     } catch (err: any) {
-      logger.error(`❌ Email delivery failure to ${to} (Attempt ${currentAttempt}/${maxAttempts}): ${err.message}`);
+      logger.error(
+        `❌ Email delivery failure to ${to} (Attempt ${currentAttempt}/${maxAttempts}): ${err.message}`
+      );
 
-      if (logRecord) {
-        // Only mark FAILED when max attempts are reached; otherwise keep PENDING
+      if (logId) {
+        // Transition: PENDING on intermediate retries, FAILED only on final attempt
         const isFinalAttempt = currentAttempt >= maxAttempts;
         await prisma.notificationLog.update({
-          where: { id: logRecord.id },
+          where: { id: logId },
           data: {
             deliveryStatus: isFinalAttempt ? NotificationStatus.FAILED : NotificationStatus.PENDING,
             errorMessage: err.message,

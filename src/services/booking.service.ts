@@ -1,5 +1,5 @@
 import { prisma } from '../config/database';
-import { Prisma, BookingStatus } from '@prisma/client';
+import { Prisma, BookingStatus, NotificationType, NotificationStatus } from '@prisma/client';
 import { AppError, ErrorCodes } from '../middleware/error.middleware';
 import { CreateBookingInput } from '../validators/booking.validator';
 import { enqueueBookingConfirmation } from '../jobs/notificationQueue';
@@ -8,7 +8,8 @@ import { logger } from '../utils/logger';
 
 export class BookingService {
   /**
-   * Create a booking atomically with zero overselling guarantee and concurrency-safe idempotency.
+   * Create a booking atomically with zero overselling guarantee, customer-scoped idempotency,
+   * payload mismatch protection, and past-event prevention at the SQL layer.
    */
   public async createBooking(
     customerId: string,
@@ -27,15 +28,36 @@ export class BookingService {
       });
 
       if (existingBooking) {
+        // Security Check 1: Idempotency-Key is strictly scoped to the owning customer
+        if (existingBooking.customerId !== customerId) {
+          throw new AppError(
+            403,
+            ErrorCodes.FORBIDDEN,
+            'Idempotency key belongs to another customer.'
+          );
+        }
+
+        // Security Check 2: Payload mismatch detection (same key, different event or quantity)
+        if (
+          existingBooking.eventId !== input.eventId ||
+          existingBooking.ticketCount !== input.quantity
+        ) {
+          throw new AppError(
+            409,
+            ErrorCodes.DUPLICATE_BOOKING,
+            'Idempotency key was previously used with a different request payload.'
+          );
+        }
+
         logger.info(`🔁 Idempotent booking replayed: ${existingBooking.bookingReference}`);
         return { booking: existingBooking, isReplayed: true };
       }
     }
 
     try {
-      // 2. Interactive transaction: Atomic Conditional Inventory Decrement + Booking Insertion
-      const booking = await prisma.$transaction(async (tx) => {
-        // Atomic conditional decrement in PostgreSQL
+      // 2. Interactive transaction: Atomic Conditional Inventory Decrement + Booking & Outbox Log Insertion
+      const { booking, notificationLogId } = await prisma.$transaction(async (tx) => {
+        // Atomic conditional decrement in PostgreSQL (strictly enforcing status=UPCOMING AND eventDate > NOW())
         const updatedEvents = await tx.$queryRaw<
           Array<{
             id: string;
@@ -51,11 +73,12 @@ export class BookingService {
           WHERE "id" = ${input.eventId}
             AND "availableTickets" >= ${input.quantity}
             AND "status" = 'UPCOMING'
+            AND "eventDate" > NOW()
           RETURNING "id", "ticketPrice", "availableTickets", "status", "eventDate";
         `;
 
         if (!updatedEvents || updatedEvents.length === 0) {
-          // Check reason for failure to provide accurate error code
+          // Diagnose the failure reason to return the precise HTTP error code
           const event = await tx.event.findUnique({
             where: { id: input.eventId },
             select: { availableTickets: true, status: true, eventDate: true },
@@ -87,6 +110,12 @@ export class BookingService {
         const event = updatedEvents[0];
         const totalAmount = new Prisma.Decimal(event.ticketPrice).mul(input.quantity);
 
+        // Fetch customer email for outbox log
+        const customer = await tx.user.findUnique({
+          where: { id: customerId },
+          select: { email: true },
+        });
+
         // Insert booking record
         const createdBooking = await tx.booking.create({
           data: {
@@ -104,14 +133,26 @@ export class BookingService {
           },
         });
 
-        return createdBooking;
+        // Outbox Pattern: Persist single NotificationLog in PENDING state inside the same ACID transaction
+        const outboxLog = await tx.notificationLog.create({
+          data: {
+            recipientEmail: customer?.email || '',
+            notificationType: NotificationType.BOOKING_CONFIRMATION,
+            deliveryStatus: NotificationStatus.PENDING,
+            eventId: input.eventId,
+            bookingId: createdBooking.id,
+            attempts: 0,
+          },
+        });
+
+        return { booking: createdBooking, notificationLogId: outboxLog.id };
       });
 
       // Invalidate event detail cache (available tickets changed)
       await cacheService.invalidateEventCache(input.eventId);
 
-      // Enqueue asynchronous booking confirmation job with signed QR code
-      enqueueBookingConfirmation(booking.id).catch((err) => {
+      // Enqueue asynchronous booking confirmation job with outbox tracking
+      enqueueBookingConfirmation(booking.id, notificationLogId).catch((err) => {
         logger.error(`Failed to enqueue booking confirmation job for booking ${booking.id}`, {
           error: err.message,
         });
@@ -133,6 +174,25 @@ export class BookingService {
         });
 
         if (existingBooking) {
+          if (existingBooking.customerId !== customerId) {
+            throw new AppError(
+              403,
+              ErrorCodes.FORBIDDEN,
+              'Idempotency key belongs to another customer.'
+            );
+          }
+
+          if (
+            existingBooking.eventId !== input.eventId ||
+            existingBooking.ticketCount !== input.quantity
+          ) {
+            throw new AppError(
+              409,
+              ErrorCodes.DUPLICATE_BOOKING,
+              'Idempotency key was previously used with a different request payload.'
+            );
+          }
+
           return { booking: existingBooking, isReplayed: true };
         }
       }
@@ -142,7 +202,7 @@ export class BookingService {
   }
 
   /**
-   * Get all bookings for authenticated customer
+   * List customer's own booking history
    */
   public async getCustomerBookings(customerId: string) {
     return prisma.booking.findMany({
@@ -152,9 +212,8 @@ export class BookingService {
           select: {
             id: true,
             title: true,
-            category: true,
-            location: true,
             eventDate: true,
+            location: true,
             ticketPrice: true,
             status: true,
           },
@@ -165,28 +224,13 @@ export class BookingService {
   }
 
   /**
-   * Get single booking by ID with customer ownership check
+   * Get specific booking by ID (Customer ownership enforced)
    */
   public async getBookingById(bookingId: string, customerId: string) {
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
       include: {
-        event: {
-          select: {
-            id: true,
-            title: true,
-            description: true,
-            category: true,
-            location: true,
-            onlineLink: true,
-            eventDate: true,
-            ticketPrice: true,
-            status: true,
-          },
-        },
-        customer: {
-          select: { id: true, fullName: true, email: true },
-        },
+        event: true,
       },
     });
 
@@ -202,80 +246,83 @@ export class BookingService {
   }
 
   /**
-   * Cancel booking atomically and restock inventory in a single transaction.
+   * Cancel booking and atomically restore ticket inventory.
    */
   public async cancelBooking(bookingId: string, customerId: string) {
-    return prisma.$transaction(async (tx) => {
-      // 1. Fetch booking to verify existence, ownership, and event date
-      const existing = await tx.booking.findUnique({
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Fetch booking with row lock/isolation
+      const booking = await tx.booking.findUnique({
         where: { id: bookingId },
-        include: {
-          event: {
-            select: { id: true, eventDate: true },
+        include: { event: true },
+      });
+
+      if (!booking) {
+        throw new AppError(404, ErrorCodes.BOOKING_NOT_FOUND, 'Booking not found.');
+      }
+
+      if (booking.customerId !== customerId) {
+        throw new AppError(403, ErrorCodes.FORBIDDEN, 'Access denied. You can only cancel your own bookings.');
+      }
+
+      if (booking.status === BookingStatus.CANCELLED) {
+        throw new AppError(400, ErrorCodes.ALREADY_CANCELLED, 'This booking has already been cancelled.');
+      }
+
+      // Check if event already took place
+      if (new Date(booking.event.eventDate) <= new Date()) {
+        throw new AppError(
+          400,
+          ErrorCodes.PAST_EVENT,
+          'Cannot cancel a booking for an event that has already occurred or started.'
+        );
+      }
+
+      // 2. Atomically update booking status from CONFIRMED to CANCELLED
+      const updatedBooking = await tx.booking.updateMany({
+        where: {
+          id: bookingId,
+          status: BookingStatus.CONFIRMED, // Concurrency protection against simultaneous cancels
+        },
+        data: {
+          status: BookingStatus.CANCELLED,
+        },
+      });
+
+      if (updatedBooking.count === 0) {
+        throw new AppError(400, ErrorCodes.ALREADY_CANCELLED, 'This booking has already been cancelled.');
+      }
+
+      // 3. Atomically restore event inventory
+      await tx.event.update({
+        where: { id: booking.eventId },
+        data: {
+          availableTickets: {
+            increment: booking.ticketCount,
           },
         },
       });
 
-      if (!existing) {
-        throw new AppError(404, ErrorCodes.BOOKING_NOT_FOUND, 'Booking not found.');
-      }
-
-      if (existing.customerId !== customerId) {
-        throw new AppError(403, ErrorCodes.FORBIDDEN, 'Access denied. You can only cancel your own bookings.');
-      }
-
-      if (existing.status === BookingStatus.CANCELLED) {
-        throw new AppError(400, ErrorCodes.ALREADY_CANCELLED, 'This booking has already been cancelled.');
-      }
-
-      if (new Date(existing.event.eventDate) <= new Date()) {
-        throw new AppError(400, ErrorCodes.PAST_EVENT, 'Cannot cancel a booking for an event that has already occurred or started.');
-      }
-
-      // 2. Atomic status transition: CONFIRMED -> CANCELLED
-      const updatedBookings = await tx.$queryRaw<
-        Array<{
-          id: string;
-          eventId: string;
-          ticketCount: number;
-          status: string;
-        }>
-      >`
-        UPDATE "bookings"
-        SET "status" = 'CANCELLED',
-            "updatedAt" = NOW()
-        WHERE "id" = ${bookingId}
-          AND "customerId" = ${customerId}
-          AND "status" = 'CONFIRMED'
-        RETURNING "id", "eventId", "ticketCount", "status";
-      `;
-
-      if (!updatedBookings || updatedBookings.length === 0) {
-        throw new AppError(400, ErrorCodes.ALREADY_CANCELLED, 'This booking has already been cancelled.');
-      }
-
-      const cancelledBooking = updatedBookings[0];
-
-      // 3. Atomically restock availableTickets in event
-      await tx.$queryRaw`
-        UPDATE "events"
-        SET "availableTickets" = "availableTickets" + ${cancelledBooking.ticketCount},
-            "updatedAt" = NOW()
-        WHERE "id" = ${cancelledBooking.eventId};
-      `;
-
-      // Invalidate event detail cache
-      await cacheService.invalidateEventCache(cancelledBooking.eventId);
-
-      logger.info(`🔄 Booking cancelled & restocked: ${bookingId} (+${cancelledBooking.ticketCount} tickets)`);
-
       return {
-        id: cancelledBooking.id,
+        bookingId: booking.id,
+        bookingReference: booking.bookingReference,
+        eventId: booking.eventId,
         status: BookingStatus.CANCELLED,
-        restockedTickets: cancelledBooking.ticketCount,
-        message: 'Booking successfully cancelled and tickets restocked to event inventory.',
+        restockedTickets: booking.ticketCount,
       };
     });
+
+    // Invalidate Redis cache
+    await cacheService.invalidateEventCache(result.eventId);
+
+    logger.info(`🚫 Booking cancelled & restocked: ${result.bookingReference} (+${result.restockedTickets} tickets)`);
+    return {
+      bookingId: result.bookingId,
+      bookingReference: result.bookingReference,
+      eventId: result.eventId,
+      status: result.status,
+      restockedTickets: result.restockedTickets,
+      message: `Booking #${result.bookingReference} cancelled successfully. ${result.restockedTickets} ticket(s) restored to available inventory.`,
+    };
   }
 }
 

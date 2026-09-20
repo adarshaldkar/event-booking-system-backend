@@ -13,9 +13,14 @@ async function main(): Promise<void> {
     logger.info(`🚀  Server running on port ${env.PORT} [${env.NODE_ENV}]`);
   });
 
+  // Start Outbox pattern background reconciliation sweep (runs every 60s)
+  const { reconciliationService } = await import('./services/reconciliation.service');
+  reconciliationService.startPeriodicSweep(60_000);
+
   // ── Graceful Shutdown ──────────────────────────────────────────────
   async function shutdown(signal: string): Promise<void> {
     logger.info(`${signal} received — shutting down gracefully...`);
+    reconciliationService.stopPeriodicSweep();
 
     server.close(async () => {
       logger.info('HTTP server closed — active requests drained');

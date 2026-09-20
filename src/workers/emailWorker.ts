@@ -26,21 +26,11 @@ export const emailWorker = new Worker<NotificationJobPayload>(
 
     switch (job.data.type) {
       case NotificationJobType.AUTH_OTP: {
-        await emailService.deliverWithLogging({
+        await emailService.sendOtpEmail({
           to: job.data.email,
-          subject: 'Your Verification Code - Event Booking System',
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-              <h2 style="color: #4F46E5;">Welcome to Event Booking System</h2>
-              <p>Hello <strong>${job.data.fullName}</strong>,</p>
-              <p>Your verification code is:</p>
-              <div style="background-color: #F3F4F6; padding: 16px; border-radius: 6px; text-align: center; margin: 20px 0;">
-                <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #111827;">${job.data.otp}</span>
-              </div>
-              <p style="color: #6B7280; font-size: 14px;">Valid for 10 minutes.</p>
-            </div>
-          `,
-          type: 'AUTH_OTP' as any,
+          fullName: job.data.fullName,
+          otp: job.data.otp,
+          notificationLogId: job.data.notificationLogId,
           currentAttempt,
           maxAttempts,
         });
@@ -81,6 +71,9 @@ export const emailWorker = new Worker<NotificationJobPayload>(
           qrDataUrl,
           bookingId: booking.id,
           eventId: booking.eventId,
+          notificationLogId: job.data.notificationLogId,
+          currentAttempt,
+          maxAttempts,
         });
         break;
       }
@@ -94,6 +87,9 @@ export const emailWorker = new Worker<NotificationJobPayload>(
           location: job.data.location,
           changedFields: job.data.changedFields,
           eventId: job.data.eventId,
+          notificationLogId: job.data.notificationLogId,
+          currentAttempt,
+          maxAttempts,
         });
         break;
       }

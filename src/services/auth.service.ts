@@ -38,11 +38,28 @@ export class AuthService {
       },
     });
 
+    // Outbox Pattern: Create single NotificationLog in PENDING state
+    let notificationLogId: string | undefined;
+    try {
+      const outboxLog = await prisma.notificationLog.create({
+        data: {
+          recipientEmail: user.email,
+          notificationType: 'AUTH_OTP',
+          deliveryStatus: 'PENDING',
+          attempts: 0,
+        },
+      });
+      notificationLogId = outboxLog.id;
+    } catch (e: any) {
+      logger.warn(`Failed to create outbox log for OTP: ${e.message}`);
+    }
+
     // Enqueue non-blocking OTP email job in BullMQ
     enqueueOtpEmail({
       email: user.email,
       fullName: user.fullName,
       otp: plainOtp,
+      notificationLogId,
     }).catch((err) => {
       logger.error(`Failed to enqueue OTP email for ${user.email}`, { error: err.message });
     });
@@ -164,17 +181,34 @@ export class AuthService {
       },
     });
 
+    // Outbox Pattern: Create single NotificationLog in PENDING state
+    let notificationLogId: string | undefined;
+    try {
+      const outboxLog = await prisma.notificationLog.create({
+        data: {
+          recipientEmail: user.email,
+          notificationType: 'AUTH_OTP',
+          deliveryStatus: 'PENDING',
+          attempts: 0,
+        },
+      });
+      notificationLogId = outboxLog.id;
+    } catch (e: any) {
+      logger.warn(`Failed to create outbox log for OTP: ${e.message}`);
+    }
+
     // Enqueue non-blocking OTP email job in BullMQ
     enqueueOtpEmail({
       email: user.email,
       fullName: user.fullName,
       otp: plainOtp,
+      notificationLogId,
     }).catch((err) => {
-      logger.error(`Failed to enqueue resend OTP email for ${user.email}`, { error: err.message });
+      logger.error(`Failed to enqueue OTP email for ${user.email}`, { error: err.message });
     });
 
     return {
-      message: 'A new 6-digit verification code has been sent to your email.',
+      message: 'A fresh verification code has been sent to your email address.',
     };
   }
 
