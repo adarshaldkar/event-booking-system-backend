@@ -1,0 +1,149 @@
+// This is your Prisma schema file
+// Learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum Role {
+  CUSTOMER
+  ORGANIZER
+}
+
+enum EventStatus {
+  UPCOMING
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum NotificationType {
+  AUTH_OTP
+  BOOKING_CONFIRMATION
+  EVENT_UPDATE_BROADCAST
+}
+
+// ==========================================
+// MODELS
+// ==========================================
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  fullName     String
+  role         Role      @default(CUSTOMER)
+  isVerified   Boolean   @default(false)
+  // OTP fields — hashed with SHA-256 / bcrypt, cleared after successful verification
+  otpHash      String?
+  otpExpiresAt DateTime?
+  otpAttempts  Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  events   Event[]   @relation("OrganizerEvents")
+  bookings Booking[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Event {
+  id          String      @id @default(uuid())
+  organizerId String
+  organizer   User        @relation("OrganizerEvents", fields: [organizerId], references: [id], onDelete: Restrict)
+  title       String
+  description String
+  category    String
+  location    String
+  onlineLink  String?
+  // All datetimes stored in UTC
+  eventDate        DateTime
+  // DB-level constraints enforced via migration raw SQL (CHECK constraints)
+  totalCapacity    Int
+  availableTickets Int
+  // NUMERIC(10,2) to avoid floating-point money bugs
+  ticketPrice      Decimal     @db.Decimal(10, 2)
+  status           EventStatus @default(UPCOMING)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  bookings      Booking[]
+  notifications NotificationLog[]
+
+  @@index([organizerId])
+  @@index([eventDate])
+  @@index([category])
+  @@index([status])
+  @@index([status, eventDate])
+  @@map("events")
+}
+
+model Booking {
+  id               String        @id @default(uuid())
+  // Human-readable reference for email and QR code
+  bookingReference String        @unique @default(cuid())
+  // Supports Idempotency-Key header to prevent duplicate bookings on retries
+  idempotencyKey   String?       @unique
+  customerId       String
+  customer         User          @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  eventId          String
+  event            Event         @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  ticketCount      Int
+  // NUMERIC(10,2) to avoid floating-point money bugs
+  totalAmount      Decimal       @db.Decimal(10, 2)
+  status           BookingStatus @default(CONFIRMED)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  notifications NotificationLog[]
+
+  @@index([customerId])
+  @@index([eventId])
+  @@index([status])
+  @@index([eventId, status])
+  @@map("bookings")
+}
+
+model NotificationLog {
+  id               String             @id @default(uuid())
+  eventId          String?
+  event            Event?             @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  bookingId        String?
+  booking          Booking?           @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  recipientEmail   String
+  notificationType NotificationType
+  deliveryStatus   NotificationStatus @default(PENDING)
+  attempts         Int                @default(0)
+  // Provider message ID returned by Resend/SMTP on success
+  providerMessageId String?
+  // Full error captured on failure
+  errorMessage      String?
+  createdAt         DateTime          @default(now())
+  sentAt            DateTime?
+
+  @@index([recipientEmail])
+  @@index([deliveryStatus])
+  @@index([notificationType])
+  @@map("notification_logs")
+}
