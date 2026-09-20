@@ -85,6 +85,7 @@ export const emailWorker = new Worker<NotificationJobPayload>(
           eventTitle: job.data.eventTitle,
           eventDate: job.data.eventDate,
           location: job.data.location,
+          onlineLink: job.data.onlineLink,
           changedFields: job.data.changedFields,
           eventId: job.data.eventId,
           notificationLogId: job.data.notificationLogId,
@@ -116,12 +117,31 @@ emailWorker.on('failed', (job, err) => {
   logger.error(`❌ Worker job #${job?.id} failed on attempt ${attempts}/${max}: ${err.message}`);
 });
 
+// Heartbeat key for deep worker liveness tracking in /health
+export const WORKER_HEARTBEAT_KEY = 'worker:heartbeat:email';
+const HEARTBEAT_INTERVAL_MS = 5000;
+const HEARTBEAT_TTL_SECONDS = 15;
+
 // Run standalone when executed directly
 if (require.main === module) {
   logger.info('🚀 Starting standalone BullMQ Email Worker (concurrency: 5)...');
 
+  const emitHeartbeat = async () => {
+    try {
+      await redis.set(WORKER_HEARTBEAT_KEY, Date.now().toString(), 'EX', HEARTBEAT_TTL_SECONDS);
+    } catch (err: any) {
+      logger.warn('Failed to publish worker heartbeat to Redis', { error: err.message });
+    }
+  };
+
+  // Initial heartbeat and periodic timer
+  emitHeartbeat();
+  const heartbeatTimer = setInterval(emitHeartbeat, HEARTBEAT_INTERVAL_MS);
+
   const shutdown = async (signal: string) => {
     logger.info(`${signal} received — closing email worker gracefully...`);
+    clearInterval(heartbeatTimer);
+    await redis.del(WORKER_HEARTBEAT_KEY).catch(() => {});
     await emailWorker.close();
     process.exit(0);
   };

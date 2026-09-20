@@ -12,7 +12,9 @@ redis.on('connect', () => console.log('✅  Redis connected'));
 redis.on('error', (err) => console.error('❌  Redis error:', err.message));
 
 export async function connectRedis(): Promise<void> {
-  await redis.connect();
+  if (redis.status === 'wait' || redis.status === 'close') {
+    await redis.connect();
+  }
 }
 
 export async function disconnectRedis(): Promise<void> {

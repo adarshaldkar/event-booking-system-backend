@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { prisma } from '../config/database';
 import { NotificationType, NotificationStatus } from '@prisma/client';
 import { logger } from '../utils/logger';
+import { escapeHtml } from '../utils/sanitize';
 
 export interface SendBookingEmailOptions {
   to: string;
@@ -28,6 +29,7 @@ export interface SendEventUpdateEmailOptions {
   eventTitle: string;
   eventDate: Date | string;
   location: string;
+  onlineLink?: string | null;
   changedFields: string[];
   eventId: string;
   notificationLogId?: string;
@@ -67,14 +69,16 @@ export class EmailService {
     maxAttempts?: number;
   }) {
     const { to, fullName, otp, notificationLogId, currentAttempt, maxAttempts } = options;
+    const safeName = escapeHtml(fullName);
+    const safeOtp = escapeHtml(otp);
     const subject = 'Your Verification Code - Event Booking System';
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
         <h2 style="color: #4F46E5; margin-bottom: 8px;">Welcome to Event Booking System</h2>
-        <p style="color: #374151; font-size: 16px;">Hello <strong>${fullName}</strong>,</p>
+        <p style="color: #374151; font-size: 16px;">Hello <strong>${safeName}</strong>,</p>
         <p style="color: #4B5563; font-size: 15px;">Your one-time verification code is:</p>
         <div style="background-color: #F3F4F6; padding: 16px; border-radius: 6px; text-align: center; margin: 20px 0;">
-          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #111827;">${otp}</span>
+          <span style="font-size: 32px; font-weight: bold; letter-spacing: 8px; color: #111827;">${safeOtp}</span>
         </div>
         <p style="color: #6B7280; font-size: 14px;">This code is valid for <strong>10 minutes</strong>. Do not share this code with anyone.</p>
         <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;" />
@@ -114,6 +118,11 @@ export class EmailService {
       maxAttempts,
     } = options;
 
+    const safeName = escapeHtml(fullName);
+    const safeRef = escapeHtml(bookingReference);
+    const safeTitle = escapeHtml(eventTitle);
+    const safeLocation = escapeHtml(location);
+
     const formattedDate = new Date(eventDate).toLocaleString('en-US', {
       weekday: 'short',
       year: 'numeric',
@@ -132,13 +141,13 @@ export class EmailService {
         </div>
 
         <div style="padding: 20px 0;">
-          <p style="font-size: 16px; color: #1f2937;">Hello <strong>${fullName}</strong>,</p>
+          <p style="font-size: 16px; color: #1f2937;">Hello <strong>${safeName}</strong>,</p>
           <p style="color: #4b5563;">Thank you for your purchase! Below are your booking and ticket details:</p>
 
           <table style="width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 15px;">
             <tr style="border-bottom: 1px solid #e5e7eb;">
               <td style="padding: 8px 0; color: #6b7280;">Event:</td>
-              <td style="padding: 8px 0; font-weight: bold; color: #111827; text-align: right;">${eventTitle}</td>
+              <td style="padding: 8px 0; font-weight: bold; color: #111827; text-align: right;">${safeTitle}</td>
             </tr>
             <tr style="border-bottom: 1px solid #e5e7eb;">
               <td style="padding: 8px 0; color: #6b7280;">Date & Time:</td>
@@ -146,11 +155,11 @@ export class EmailService {
             </tr>
             <tr style="border-bottom: 1px solid #e5e7eb;">
               <td style="padding: 8px 0; color: #6b7280;">Venue:</td>
-              <td style="padding: 8px 0; font-weight: bold; color: #111827; text-align: right;">${location}</td>
+              <td style="padding: 8px 0; font-weight: bold; color: #111827; text-align: right;">${safeLocation}</td>
             </tr>
             <tr style="border-bottom: 1px solid #e5e7eb;">
               <td style="padding: 8px 0; color: #6b7280;">Tickets:</td>
-              <td style="padding: 8px 0; font-weight: bold; color: #111827; text-align: right;">${ticketCount} ticket(s)</td>
+              <td style="padding: 8px 0; font-weight: bold; color: #111827; text-align: right;">${Number(ticketCount)} ticket(s)</td>
             </tr>
             <tr style="border-bottom: 1px solid #e5e7eb;">
               <td style="padding: 8px 0; color: #6b7280;">Total Paid:</td>
@@ -158,7 +167,7 @@ export class EmailService {
             </tr>
             <tr>
               <td style="padding: 8px 0; color: #6b7280;">Booking Reference:</td>
-              <td style="padding: 8px 0; font-family: monospace; font-weight: bold; color: #4F46E5; text-align: right;">${bookingReference}</td>
+              <td style="padding: 8px 0; font-family: monospace; font-weight: bold; color: #4F46E5; text-align: right;">${safeRef}</td>
             </tr>
           </table>
 
@@ -197,12 +206,19 @@ export class EmailService {
       eventTitle,
       eventDate,
       location,
+      onlineLink,
       changedFields,
       eventId,
       notificationLogId,
       currentAttempt,
       maxAttempts,
     } = options;
+
+    const safeName = escapeHtml(fullName);
+    const safeTitle = escapeHtml(eventTitle);
+    const safeLocation = escapeHtml(location);
+    const safeChanged = changedFields.map((f) => escapeHtml(f)).join(', ');
+    const safeOnlineLink = onlineLink ? escapeHtml(onlineLink) : null;
 
     const formattedDate = new Date(eventDate).toLocaleString('en-US', {
       weekday: 'short',
@@ -219,13 +235,14 @@ export class EmailService {
         <div style="background-color: #FEF3C7; border-left: 4px solid #F59E0B; padding: 12px 16px; border-radius: 4px; margin-bottom: 20px;">
           <h3 style="margin: 0; color: #92400E;">Event Update Notice</h3>
         </div>
-        <p style="color: #374151; font-size: 16px;">Hello <strong>${fullName}</strong>,</p>
-        <p style="color: #4B5563;">The organizer has made important updates to <strong>${eventTitle}</strong> for which you hold a confirmed ticket.</p>
+        <p style="color: #374151; font-size: 16px;">Hello <strong>${safeName}</strong>,</p>
+        <p style="color: #4B5563;">The organizer has made important updates to <strong>${safeTitle}</strong> for which you hold a confirmed ticket.</p>
         
-        <p style="font-weight: bold; color: #374151;">Updated details (${changedFields.join(', ')}):</p>
+        <p style="font-weight: bold; color: #374151;">Updated details (${safeChanged}):</p>
         <ul>
           <li><strong>Event Date:</strong> ${formattedDate}</li>
-          <li><strong>Venue / Location:</strong> ${location}</li>
+          <li><strong>Venue / Location:</strong> ${safeLocation}</li>
+          ${safeOnlineLink ? `<li><strong>Online Meeting / Stream:</strong> <a href="${safeOnlineLink}" style="color: #4F46E5;">${safeOnlineLink}</a></li>` : ''}
         </ul>
         <p style="color: #6B7280; font-size: 14px;">Your existing ticket QR code and booking reference remain valid for admission.</p>
         <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;" />

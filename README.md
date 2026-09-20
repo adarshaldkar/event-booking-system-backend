@@ -9,6 +9,7 @@
 [![BullMQ](https://img.shields.io/badge/BullMQ-Worker_Queues-FF4F64)](https://bullmq.io/)
 [![Tests](https://img.shields.io/badge/Tests-62%20Passing%20(100%25)-brightgreen)](docs/testcases.md)
 [![Zero Overselling](https://img.shields.io/badge/Overselling-0%20Tickets-success)](docs/testcase5.md)
+[![Architecture Board](https://img.shields.io/badge/Eraser.io-Architecture_Diagram-purple?logo=diagrams.net&logoColor=white)](https://app.eraser.io/workspace/K03ts7PmbjI2eR0HlIE6?origin=share)
 
 An enterprise-grade, high-concurrency event ticketing and booking backend built with **Node.js, Express, TypeScript, PostgreSQL, Prisma, Redis, BullMQ, and Resend**.
 
@@ -18,7 +19,7 @@ Engineered to handle flash-sale traffic bursts with atomic PostgreSQL conditiona
 
 ## 📑 Table of Contents
 
-- [Architectural Overview](#-architectural-overview)
+- [Architectural Overview & Eraser.io Diagrams](#-architectural-overview)
 - [System Architecture Diagram](#-system-architecture-diagram)
 - [Booking Engine & Concurrency Design](#-booking-engine--concurrency-design)
 - [Database Entity Relationship Diagram (ERD)](#-database-entity-relationship-diagram-erd)
@@ -34,6 +35,9 @@ Engineered to handle flash-sale traffic bursts with atomic PostgreSQL conditiona
 ---
 
 ## 🏛️ Architectural Overview
+
+> 📐 **Live Interactive Architecture Board:** [Open in Eraser.io](https://app.eraser.io/workspace/K03ts7PmbjI2eR0HlIE6?origin=share)  
+> *Features full interactive system topology, middleware request lifecycle flowchart, and ACID booking sequence diagrams.*
 
 ```text
                                  ┌────────────────────────────────────────────────────────┐

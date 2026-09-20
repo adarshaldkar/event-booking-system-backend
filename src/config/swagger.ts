@@ -79,6 +79,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
                   type: 'object',
                   properties: {
                     status: { type: 'string', example: 'ready' },
+                    workerAlive: { type: 'boolean', example: true },
                   },
                 },
               },

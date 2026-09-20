@@ -29,3 +29,8 @@ benchmarks/results/
 
 # Zip Archives
 *.zip
+
+# Postman local caches
+.postman/
+postman/
+

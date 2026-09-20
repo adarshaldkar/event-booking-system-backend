@@ -209,6 +209,7 @@ export class EventService {
           eventTitle: updatedEvent.title,
           eventDate: updatedEvent.eventDate.toISOString(),
           location: updatedEvent.location,
+          onlineLink: updatedEvent.onlineLink,
           changedFields,
         }));
 

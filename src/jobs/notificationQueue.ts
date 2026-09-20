@@ -32,6 +32,7 @@ export interface EventUpdateBroadcastJobData {
   eventTitle: string;
   eventDate: string;
   location: string;
+  onlineLink?: string | null;
   changedFields: string[];
   notificationLogId?: string;
 }
@@ -125,6 +126,7 @@ export async function enqueueEventUpdateBroadcastBatch(
     eventTitle: string;
     eventDate: string;
     location: string;
+    onlineLink?: string | null;
     changedFields: string[];
     notificationLogId?: string;
   }>

@@ -1,13 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../config/database';
-import { checkRedisHealth } from '../config/redis';
+import { redis, checkRedisHealth } from '../config/redis';
 import { notificationQueue } from '../jobs/notificationQueue';
 
 const router = Router();
 
 /**
  * GET /health
- * Deep health probe reporting status of PostgreSQL, Redis, and BullMQ queue connectivity.
+ * Deep health probe reporting status of PostgreSQL, Redis, BullMQ queue connectivity, and worker process heartbeat.
  * - Database DOWN -> 503 Service Unavailable
  * - Redis DOWN    -> 503 Service Unavailable
  * - Worker Queue  -> If queue is degraded/unavailable, API remains 200 OK with 'degraded' status.
@@ -29,6 +29,14 @@ router.get('/', async (_req: Request, res: Response) => {
     queueHealthy = !isPaused;
   } catch {
     queueHealthy = false;
+  }
+
+  let workerAlive = false;
+  try {
+    const hb = await redis.get('worker:heartbeat:email');
+    workerAlive = !!hb;
+  } catch {
+    workerAlive = false;
   }
 
   const isCriticalHealthy = dbHealthy && redisHealthy;
@@ -54,6 +62,7 @@ router.get('/', async (_req: Request, res: Response) => {
       },
       workerQueue: {
         status: queueHealthy ? 'ready' : 'unavailable',
+        workerAlive,
       },
     },
   });
