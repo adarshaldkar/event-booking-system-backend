@@ -25,6 +25,7 @@ Engineered to handle flash-sale traffic bursts with atomic PostgreSQL conditiona
 - [Database Entity Relationship Diagram (ERD)](#-database-entity-relationship-diagram-erd)
 - [Core Technical Decisions & Tradeoffs](#-core-technical-decisions--tradeoffs)
 - [Empirical Benchmark Results (Phase 5)](#-empirical-benchmark-results-phase-5)
+- [Concurrency Constraints & Optimization Delta Report](docs/CONCURRENCY_OPTIMIZATION_REPORT.md)
 - [Quickstart Guide (5-Minute Setup)](#-quickstart-guide-5-minute-setup)
 - [Environment Variables Reference](#-environment-variables-reference)
 - [REST API Endpoints Catalog](#-rest-api-endpoints-catalog)
@@ -235,6 +236,8 @@ erDiagram
 ---
 
 ## 📊 Empirical Benchmark Results (Phase 5)
+
+> 📑 **Detailed Evaluation Report:** For in-depth analysis of naive LLM breaking points, architectural mitigations, and before-vs-after delta metrics, see the **[Concurrency Constraints & Optimization Delta Report](docs/CONCURRENCY_OPTIMIZATION_REPORT.md)**.
 
 All benchmarks executed against live PostgreSQL 16 and Upstash Redis instances (`npm run benchmark`):
 
