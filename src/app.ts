@@ -31,6 +31,17 @@ app.get('/api-docs.json', (_req, res) => {
   res.send(swaggerSpec);
 });
 
+// ── Root Welcome Endpoint
+app.get('/', (_req, res) => {
+  res.json({
+    name: 'Event Booking System API',
+    status: 'online',
+    version: '1.0.0',
+    documentation: '/api-docs',
+    health: '/health',
+  });
+});
+
 // ── General rate limit (loose — does not interfere with k6 benchmarks on booking endpoint)
 app.use('/api', generalRateLimit);
 
