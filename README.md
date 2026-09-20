@@ -324,6 +324,48 @@ npm run dev:worker
 
 ---
 
+## 🛠️ Running Individual Services & Tools Cheatsheet
+
+| Task / Service | Command | Description |
+|---|---|---|
+| **Express API Server Only** | `npm run dev` | Runs the API server with hot-reloading on `http://localhost:4000`. |
+| **BullMQ Email Worker Only** | `npm run dev:worker` | Runs only the background worker processing email & QR queues. |
+| **Prisma Studio (Visual DB GUI)** | `npx prisma studio` | Opens an interactive web GUI at `http://localhost:5555` to view and edit tables. |
+| **High-Concurrency Benchmark** | `npm run benchmark` | Runs the 500-buyer flash sale concurrency test & cache comparison. |
+| **Complete Automated Test Suite** | `npm test` | Runs all 62 Vitest unit, integration, and concurrency tests. |
+| **Single Test Suite (e.g. Concurrency)** | `npx vitest tests/concurrency.test.ts` | Runs only the 50-buyer flash sale zero-overselling test. |
+| **Single Test Suite (e.g. Auth & OTP)** | `npx vitest tests/auth.test.ts` | Runs only authentication, OTP hashing, and JWT tests. |
+| **Single Test Suite (e.g. Bookings)** | `npx vitest tests/booking.test.ts` | Runs only booking, cancellation, and idempotency tests. |
+| **Single Test Suite (e.g. Redis Cache)** | `npx vitest tests/cache.test.ts` | Runs only Redis read-through caching & invalidation tests. |
+| **Single Test Suite (e.g. BullMQ Queue)** | `npx vitest tests/queue.test.ts` | Runs only BullMQ worker retry and notification log tests. |
+| **Re-seed Initial Data** | `npm run db:seed` | Re-populates baseline Organizers, Customers, and Events. |
+| **Compile Production Bundle** | `npm run build` | Compiles TypeScript into `dist/` (0 compilation errors). |
+| **Start Production API Server** | `npm run start` | Runs compiled production API (`dist/index.js`). |
+| **Start Production Worker Node** | `npm run start:worker` | Runs compiled production worker (`dist/workers/emailWorker.js`). |
+
+---
+
+## ☁️ Cloud Deployment Guide (Render / Railway)
+
+### 1. Database (Cloud PostgreSQL)
+- Create a free cloud PostgreSQL database on **[Neon.tech](https://neon.tech)**, **Supabase**, or **Render PostgreSQL**.
+- Copy the connection string to `DATABASE_URL` (e.g. `postgresql://user:pass@ep-xyz.neon.tech/neondb?sslmode=require`).
+
+### 2. Redis & BullMQ Bus
+- Redis is already cloud-hosted on **Upstash Redis** (`rediss://default:...@enabled-bullfrog-287416.upstash.io:6379`). No local Redis configuration needed.
+
+### 3. Deploy Web API on Render
+- **Type**: Web Service (Node.js)
+- **Build Command**: `npm install && npm run build && npx prisma db push && npm run db:seed`
+- **Start Command**: `npm run start`
+
+### 4. Deploy Background Worker on Render (Optional Separate Service)
+- **Type**: Background Worker
+- **Build Command**: `npm install && npm run build`
+- **Start Command**: `npm run start:worker`
+
+---
+
 ## 🔐 Environment Variables Reference
 
 | Variable | Description | Example / Default |
