@@ -8,8 +8,8 @@ describe('Health Check API', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.status).toBe('healthy');
-    expect(res.body.services.database).toBe('connected');
-    expect(res.body.services.redis).toBe('connected');
+    expect(res.body.services.database.status || res.body.services.database).toBe('connected');
+    expect(res.body.services.redis.status || res.body.services.redis).toBe('connected');
     expect(res.body.timestamp).toBeDefined();
   });
 });

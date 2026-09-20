@@ -18,7 +18,13 @@ async function main(): Promise<void> {
     logger.info(`${signal} received — shutting down gracefully...`);
 
     server.close(async () => {
-      logger.info('HTTP server closed');
+      logger.info('HTTP server closed — active requests drained');
+      try {
+        const { notificationQueue } = await import('./jobs/notificationQueue');
+        await notificationQueue.close();
+      } catch (err) {
+        logger.warn('Error closing notification queue during shutdown', { error: err });
+      }
       await disconnectDatabase();
       await disconnectRedis();
       logger.info('✅  Shutdown complete');

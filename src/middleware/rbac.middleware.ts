@@ -19,15 +19,15 @@ export async function requireEventOwnership(
     });
 
     if (!event) {
-      return next(new AppError('Event not found.', 404, ErrorCodes.EVENT_NOT_FOUND));
+      return next(new AppError(404, ErrorCodes.EVENT_NOT_FOUND, 'Event not found.'));
     }
 
     if (event.organizerId !== organizerId) {
       return next(
         new AppError(
-          'You do not have permission to modify this event.',
           403,
-          ErrorCodes.NOT_OWNER
+          ErrorCodes.NOT_OWNER,
+          'You do not have permission to modify this event.'
         )
       );
     }
@@ -55,15 +55,15 @@ export async function requireBookingOwnership(
     });
 
     if (!booking) {
-      return next(new AppError('Booking not found.', 404, ErrorCodes.BOOKING_NOT_FOUND));
+      return next(new AppError(404, ErrorCodes.BOOKING_NOT_FOUND, 'Booking not found.'));
     }
 
     if (booking.customerId !== customerId) {
       return next(
         new AppError(
-          'You do not have permission to access this booking.',
           403,
-          ErrorCodes.NOT_OWNER
+          ErrorCodes.NOT_OWNER,
+          'You do not have permission to access this booking.'
         )
       );
     }

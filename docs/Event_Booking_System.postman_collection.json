@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "a92c301d-5b72-4d51-9e23-289bb1ce8df2",
     "name": "Event Booking System API",
-    "description": "Comprehensive Postman collection for Event Booking System covering Health, Auth, Events, Bookings, RBAC, and Concurrency testing.",
+    "description": "Comprehensive Postman collection for Event Booking System covering Health, Auth, Events, Bookings, RBAC, Idempotency, and Concurrency testing.\n\nNote: OTP delivery and booking confirmation emails are dispatched asynchronously via BullMQ / Resend.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,7 +10,7 @@
     { "key": "authToken", "value": "", "type": "string" },
     { "key": "organizerToken", "value": "", "type": "string" },
     { "key": "customerToken", "value": "", "type": "string" },
-    { "key": "eventId", "value": "seed-flash-sale-event-id", "type": "string" },
+    { "key": "eventId", "value": "", "type": "string" },
     { "key": "bookingId", "value": "", "type": "string" }
   ],
   "item": [
@@ -18,7 +18,7 @@
       "name": "1. System & Health",
       "item": [
         {
-          "name": "Health Check",
+          "name": "Health Check Probe",
           "request": {
             "method": "GET",
             "header": [],
@@ -26,7 +26,7 @@
           }
         },
         {
-          "name": "Swagger OpenAPI Specification",
+          "name": "OpenAPI 3.0 Specification JSON",
           "request": {
             "method": "GET",
             "header": [],
@@ -36,34 +36,79 @@
       ]
     },
     {
-      "name": "2. Authentication",
+      "name": "2. Authentication & Authorization",
       "item": [
         {
-          "name": "Register Customer",
+          "name": "Register Customer (Triggers Asynchronous OTP Email)",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"newcustomer@test.com\",\n  \"password\": \"Password123!\",\n  \"fullName\": \"John Doe\",\n  \"role\": \"CUSTOMER\"\n}"
+              "raw": "{\n  \"email\": \"postman_customer@test.com\",\n  \"password\": \"Password123!\",\n  \"fullName\": \"Postman Test Customer\",\n  \"role\": \"CUSTOMER\"\n}"
             },
             "url": { "raw": "{{baseUrl}}/api/auth/register", "host": ["{{baseUrl}}"], "path": ["api", "auth", "register"] }
           }
         },
         {
-          "name": "Verify OTP",
+          "name": "Verify OTP & Activate Account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.token) {",
+                  "        pm.collectionVariables.set('customerToken', jsonData.data.token);",
+                  "        pm.collectionVariables.set('authToken', jsonData.data.token);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"newcustomer@test.com\",\n  \"otp\": \"123456\"\n}"
+              "raw": "{\n  \"email\": \"postman_customer@test.com\",\n  \"otp\": \"123456\"\n}"
             },
             "url": { "raw": "{{baseUrl}}/api/auth/verify-otp", "host": ["{{baseUrl}}"], "path": ["api", "auth", "verify-otp"] }
           }
         },
         {
-          "name": "Login Organizer",
+          "name": "Resend OTP",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"postman_customer@test.com\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/auth/resend-otp", "host": ["{{baseUrl}}"], "path": ["api", "auth", "resend-otp"] }
+          }
+        },
+        {
+          "name": "Login Organizer (Auto-Saves organizerToken)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.token) {",
+                  "        pm.collectionVariables.set('organizerToken', jsonData.data.token);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -75,7 +120,24 @@
           }
         },
         {
-          "name": "Login Customer",
+          "name": "Login Customer (Auto-Saves customerToken)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.token) {",
+                  "        pm.collectionVariables.set('customerToken', jsonData.data.token);",
+                  "        pm.collectionVariables.set('authToken', jsonData.data.token);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -87,7 +149,7 @@
           }
         },
         {
-          "name": "Get Profile (Me)",
+          "name": "Get Authenticated User Profile (/me)",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{authToken}}" }],
@@ -97,18 +159,44 @@
       ]
     },
     {
-      "name": "3. Events",
+      "name": "3. Event Management",
       "item": [
         {
-          "name": "List All Events",
+          "name": "List All Events (Cached with Redis Read-Through)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.length > 0) {",
+                  "        pm.collectionVariables.set('eventId', jsonData.data[0].id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "GET",
             "header": [],
-            "url": { "raw": "{{baseUrl}}/api/events", "host": ["{{baseUrl}}"], "path": ["api", "events"] }
+            "url": {
+              "raw": "{{baseUrl}}/api/events?page=1&limit=10&search=&category=",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "events"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "10" },
+                { "key": "search", "value": "" },
+                { "key": "category", "value": "" }
+              ]
+            }
           }
         },
         {
-          "name": "Get Event By ID",
+          "name": "Get Event Details by ID (Redis Cached)",
           "request": {
             "method": "GET",
             "header": [],
@@ -117,6 +205,22 @@
         },
         {
           "name": "Create Event (Organizer Only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.id) {",
+                  "        pm.collectionVariables.set('eventId', jsonData.data.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
@@ -125,24 +229,63 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Cloud Native Summit 2026\",\n  \"description\": \"Full day deep-dive into Kubernetes and distributed systems\",\n  \"category\": \"Technology\",\n  \"location\": \"San Francisco Convention Center\",\n  \"eventDate\": \"2026-11-15T09:00:00.000Z\",\n  \"totalCapacity\": 250,\n  \"ticketPrice\": 99.00\n}"
+              "raw": "{\n  \"title\": \"Cloud Native Summit 2026\",\n  \"description\": \"Full day deep-dive into Kubernetes and distributed systems\",\n  \"category\": \"CONFERENCE\",\n  \"location\": \"San Francisco Convention Center\",\n  \"eventDate\": \"2026-11-15T09:00:00.000Z\",\n  \"totalCapacity\": 250,\n  \"ticketPrice\": 99.00\n}"
             },
             "url": { "raw": "{{baseUrl}}/api/events", "host": ["{{baseUrl}}"], "path": ["api", "events"] }
+          }
+        },
+        {
+          "name": "Update Event (Owner Only - Triggers Broadcast)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{organizerToken}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"location\": \"Moscone West Hall B, San Francisco\",\n  \"description\": \"Updated venue hall details for keynote seating.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/events/{{eventId}}", "host": ["{{baseUrl}}"], "path": ["api", "events", "{{eventId}}"] }
+          }
+        },
+        {
+          "name": "Cancel Event (Organizer Owner Soft Delete)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{organizerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/events/{{eventId}}", "host": ["{{baseUrl}}"], "path": ["api", "events", "{{eventId}}"] }
           }
         }
       ]
     },
     {
-      "name": "4. Bookings",
+      "name": "4. Booking Engine & Concurrency",
       "item": [
         {
-          "name": "Book Tickets (Idempotent & Concurrency Safe)",
+          "name": "Book Tickets (Atomic Decrement & Dynamic Idempotency)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201 || pm.response.code === 200) {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.data && jsonData.data.id) {",
+                  "        pm.collectionVariables.set('bookingId', jsonData.data.id);",
+                  "    }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
               { "key": "Authorization", "value": "Bearer {{customerToken}}" },
-              { "key": "Idempotency-Key", "value": "postman-test-key-001" }
+              { "key": "Idempotency-Key", "value": "postman-order-{{$guid}}" }
             ],
             "body": {
               "mode": "raw",
@@ -152,7 +295,23 @@
           }
         },
         {
-          "name": "Get Customer Bookings",
+          "name": "Replay Booking (Idempotency Key Demo - Fixed Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Idempotency-Key", "value": "demo-idempotency-key-001" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"eventId\": \"{{eventId}}\",\n  \"quantity\": 1\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/api/bookings", "host": ["{{baseUrl}}"], "path": ["api", "bookings"] }
+          }
+        },
+        {
+          "name": "List Customer Booking History",
           "request": {
             "method": "GET",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
@@ -160,7 +319,15 @@
           }
         },
         {
-          "name": "Cancel Booking",
+          "name": "Get Specific Booking by ID",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": { "raw": "{{baseUrl}}/api/bookings/{{bookingId}}", "host": ["{{baseUrl}}"], "path": ["api", "bookings", "{{bookingId}}"] }
+          }
+        },
+        {
+          "name": "Cancel Booking (Atomic Restock Inventory)",
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],

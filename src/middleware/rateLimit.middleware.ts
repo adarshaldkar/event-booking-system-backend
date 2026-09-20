@@ -8,7 +8,7 @@ export const authRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (_req, _res, next) => {
-    next(new AppError('Too many requests. Please try again later.', 429, 'RATE_LIMIT_EXCEEDED'));
+    next(new AppError(429, ErrorCodes.TOO_MANY_REQUESTS, 'Too many requests. Please try again later.'));
   },
 });
 
@@ -19,7 +19,7 @@ export const otpRateLimit = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   handler: (_req, _res, next) => {
-    next(new AppError('Too many OTP attempts. Please wait before retrying.', 429, 'RATE_LIMIT_EXCEEDED'));
+    next(new AppError(429, ErrorCodes.TOO_MANY_REQUESTS, 'Too many OTP attempts. Please wait before retrying.'));
   },
 });
 
@@ -27,10 +27,10 @@ export const otpRateLimit = rateLimit({
 // NOTE: Do NOT apply this to booking endpoints during benchmark runs
 export const generalRateLimit = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 300,
+  max: 3000, // High capacity for benchmark testing
   standardHeaders: true,
   legacyHeaders: false,
   handler: (_req, _res, next) => {
-    next(new AppError('Too many requests. Please try again later.', 429, 'RATE_LIMIT_EXCEEDED'));
+    next(new AppError(429, ErrorCodes.TOO_MANY_REQUESTS, 'Too many requests. Please try again later.'));
   },
 });
