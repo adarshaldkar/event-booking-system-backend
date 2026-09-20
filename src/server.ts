@@ -17,6 +17,12 @@ async function main(): Promise<void> {
   const { reconciliationService } = await import('./services/reconciliation.service');
   reconciliationService.startPeriodicSweep(60_000);
 
+  // Start BullMQ worker in same process by default (enables single-instance cloud deployment on Render/Railway)
+  if (process.env.START_WORKER !== 'false') {
+    await import('./workers/emailWorker');
+    logger.info('📨  BullMQ notification worker active in server process');
+  }
+
   // ── Graceful Shutdown ──────────────────────────────────────────────
   async function shutdown(signal: string): Promise<void> {
     logger.info(`${signal} received — shutting down gracefully...`);
@@ -29,6 +35,12 @@ async function main(): Promise<void> {
         await notificationQueue.close();
       } catch (err) {
         logger.warn('Error closing notification queue during shutdown', { error: err });
+      }
+      try {
+        const { emailWorker } = await import('./workers/emailWorker');
+        await emailWorker.close();
+      } catch (err) {
+        // worker may not be running if START_WORKER=false
       }
       await disconnectDatabase();
       await disconnectRedis();
